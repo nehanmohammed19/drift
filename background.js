@@ -45,4 +45,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     sendResponse({ success: true });
   }
+  
+  // Handle ADHD prediction requests
+  if (message.type === 'PREDICT_ADHD') {
+    const features = message.features;
+    console.log('Received features for prediction:', features);
+    
+    // Call the FastAPI model server
+    fetch('http://127.0.0.1:8000/predict', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(features)
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log('Model prediction received:', data);
+      sendResponse({ 
+        success: true, 
+        prediction: data.adhd_probability,
+        message: `ADHD Probability: ${(data.adhd_probability * 100).toFixed(1)}%`
+      });
+    })
+    .catch(error => {
+      console.error('Error calling model server:', error);
+      sendResponse({ 
+        success: false, 
+        error: error.message,
+        message: 'Failed to get prediction. Make sure the model server is running on http://127.0.0.1:8000'
+      });
+    });
+    
+    // Return true to indicate we'll send a response asynchronously
+    return true;
+  }
 });

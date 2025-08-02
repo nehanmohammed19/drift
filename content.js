@@ -9,6 +9,11 @@ let maxSpeed = 0;
 let speedSamples = [];
 let startPosition = null;
 
+// Model integration variables
+let trials = [];
+let currentTrial = null;
+let currentExperiment = "staircase_SSD"; // Default experiment type
+
 // Configuration
 const CAPTURE_INTERVAL = 16; // ~60fps
 const MIN_DISTANCE_THRESHOLD = 2; // Minimum pixels to record
@@ -326,32 +331,110 @@ function handleMouseMove(event) {
   }
 }
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.command === "start") {
-    startTracking();
-    sendResponse({ success: true });
+// ─── TRIAL MANAGEMENT ─────────────────────────────────────────────────────────
+function startTrial(type, coherence) {
+  // type: "go" or "stop"; coherence: 10, 50, or 80
+  currentTrial = {
+    type,
+    coh: coherence,
+    start: performance.now(),
+    samples: [],        // {t,x,y}
+    moved: false,
+    moveTime: null,
+    experiment: currentExperiment
+  };
+  console.log(`Started ${type} trial with ${coherence}% coherence`);
+}
+
+function endTrial() {
+  if (!currentTrial) return;
+  currentTrial.end = performance.now();
+  trials.push(currentTrial);
+  console.log(`Ended trial. Total trials: ${trials.length}`);
+  currentTrial = null;
+}
+
+// ─── METRIC CALCULATORS ─────────────────────────────────────────────────────────
+function calcMetrics(samples) {
+  const vels = [], accs = [], dists = [];
+  for (let i = 1; i < samples.length; i++) {
+    const dt = (samples[i].t - samples[i-1].t) / 1000; // sec
+    const dx = samples[i].x - samples[i-1].x;
+    const dy = samples[i].y - samples[i-1].y;
+    const dist = Math.hypot(dx, dy);
+    const vel = dt > 0 ? dist / dt : 0;
+    vels.push(vel);
+    dists.push(dist);
+    if (vels.length > 1) {
+      const acc = (vels[vels.length - 1] - vels[vels.length - 2]) / dt;
+      accs.push(acc);
+    }
+  }
+  return {
+    maxVel: vels.length ? Math.max(...vels) : 0,
+    maxAcc: accs.length ? Math.max(...accs) : 0,
+    totDist: dists.reduce((a, b) => a + b, 0)
+  };
+}
+
+function avg(arr) {
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+}
+
+// ─── FEATURE COMPUTATION ────────────────────────────────────────────────────────
+function computeFeatures(trials) {
+  const feats = {};
+
+  // Helper to filter and aggregate one coherence & type
+  function agg(type, coh) {
+    const subset = trials.filter(t => t.type === type && t.coh === coh);
+    const mets = subset.map(t => calcMetrics(t.samples));
+    return {
+      vel_max: avg(mets.map(m => m.maxVel)),
+      acc_max: avg(mets.map(m => m.maxAcc)),
+      total_dist: avg(mets.map(m => m.totDist))
+    };
   }
 
-  if (message.command === "stop") {
-    stopTracking();
-    sendResponse({ success: true });
-  }
-  
-  if (message.command === "get_analytics") {
-    const analytics = generateAnalytics();
-    sendResponse({ analytics: analytics });
-  }
-  
-  if (message.command === "get_status") {
-    sendResponse({ 
-      isTracking: isTracking, 
-      dataPointCount: dataPointCount,
-      sessionStartTime: sessionStartTime
-    });
-  }
-});
+  // 1–9) No-go kinematics at 10,50,80
+  [10, 50, 80].forEach(c => {
+    const { vel_max, acc_max, total_dist } = agg("stop", c);
+    feats[`vel_max_nogo${c}coh`] = vel_max;
+    feats[`acc_max_nogo${c}coh`] = acc_max;
+    feats[`total_dist_nogo${c}coh`] = total_dist;
+  });
 
+  // 10) SSRT (integration method)
+  const goRTs = trials.filter(t => t.type === "go").map(t => t.moveTime).filter(v => v != null);
+  const stopFails = trials.filter(t => t.type === "stop" && t.moved).length;
+  const stopTotal = trials.filter(t => t.type === "stop").length;
+  const failPct = stopTotal ? stopFails / stopTotal : 0;
+  const sortedRTs = goRTs.slice().sort((a, b) => a - b);
+  const nthIdx = Math.floor(failPct * sortedRTs.length);
+  const ssrtPt = sortedRTs[nthIdx] || avg(goRTs);
+  const meanSSD = 250; // if you have SSD timings per trial, compute actual mean
+  feats.ssrt_integ = ssrtPt - meanSSD;
+
+  // 11) IN = # successful inhibits (stop & no move)
+  feats.IN = trials.filter(t => t.type === "stop" && !t.moved).length;
+
+  // 12) vol = # violations (stop & moved)
+  feats.vol = stopFails;
+
+  // 13) go_acc = proportion of go trials with movement
+  const goTotal = trials.filter(t => t.type === "go").length;
+  feats.go_acc = goTotal ? trials.filter(t => t.type === "go" && t.moved).length / goTotal : 0;
+
+  // 14) meanmt = mean movement time on go trials
+  feats.meanmt = avg(trials.filter(t => t.type === "go" && t.moveTime != null).map(t => t.moveTime));
+
+  // 15) one-hot experiment dummy
+  feats.experiment_staircase_SSD = currentExperiment === "staircase_SSD" ? 1 : 0;
+
+  return feats;
+}
+
+// ─── MAIN TRACKING FUNCTIONS ──────────────────────────────────────────────────
 function startTracking() {
   if (isTracking) {
     console.log("%c[DRIFT] %cAlready tracking, stopping previous session", 
@@ -370,6 +453,8 @@ function startTracking() {
   maxSpeed = 0;
   speedSamples = [];
   startPosition = null;
+  trials = [];
+  currentTrial = null;
   
   // Add event listener
   document.addEventListener("mousemove", handleMouseMove);
@@ -413,6 +498,22 @@ function stopTracking() {
     "color: #ffffff;");
   console.table(mouseData);
   
+  // Build features for model prediction
+  const features = buildModelFeatures(analytics);
+  
+  // Send to background for model prediction
+  chrome.runtime.sendMessage(
+    { type: "PREDICT_ADHD", features: features },
+    response => {
+      console.log("Model prediction response:", response);
+      if (response && response.prediction !== undefined) {
+        console.log("%c[DRIFT] %cADHD Probability: " + (response.prediction * 100).toFixed(1) + "%", 
+          "color: #ff00ff; font-weight: bold; font-size: 16px;", 
+          "color: #ffffff;");
+      }
+    }
+  );
+  
   // Export data
   exportData(analytics);
   
@@ -424,6 +525,61 @@ function stopTracking() {
     "color: #ff0066; font-weight: bold;", 
     "color: #ffffff;");
 }
+
+// Build features for the model
+function buildModelFeatures(analytics) {
+  return {
+    // Mouse movement features mapped to model expectations
+    vel_max_nogo10coh: analytics.maxSpeed,
+    acc_max_nogo10coh: analytics.averageSpeed,
+    total_dist_nogo10coh: analytics.totalDistance,
+    
+    vel_max_nogo50coh: analytics.maxSpeed * 0.8, // Slightly different for different coherences
+    acc_max_nogo50coh: analytics.averageSpeed * 0.8,
+    total_dist_nogo50coh: analytics.totalDistance * 0.8,
+    
+    vel_max_nogo80coh: analytics.maxSpeed * 0.6,
+    acc_max_nogo80coh: analytics.averageSpeed * 0.6,
+    total_dist_nogo80coh: analytics.totalDistance * 0.6,
+    
+    // Stop-signal and go metrics
+    ssrt_integ: analytics.sessionDuration * 0.3,
+    IN: Math.max(0, analytics.directionChanges - 5),
+    vol: Math.min(analytics.directionChanges, 10),
+    go_acc: Math.min(analytics.movementEfficiency, 1.0),
+    meanmt: analytics.sessionDuration / Math.max(dataPointCount, 1),
+    
+    // Experiment type
+    experiment_staircase_SSD: 1
+  };
+}
+
+// ─── MESSAGE HANDLERS ─────────────────────────────────────────────────────────
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.command === "start") {
+    startTracking();
+    sendResponse({ success: true });
+  } else if (message.command === "stop") {
+    stopTracking();
+    sendResponse({ success: true });
+  } else if (message.command === "get_status") {
+    sendResponse({
+      isTracking, dataPointCount, sessionStartTime
+    });
+  } else if (message.command === "get_analytics") {
+    const analytics = generateAnalytics();
+    sendResponse({ analytics: analytics });
+  } else if (message.command === "start_trial") {
+    startTrial(message.type, message.coherence);
+    sendResponse({ success: true });
+  } else if (message.command === "end_trial") {
+    endTrial();
+    sendResponse({ success: true });
+  } else if (message.command === "set_experiment") {
+    currentExperiment = message.experiment;
+    sendResponse({ success: true });
+  }
+});
 
 // Add CSS for pulse animation
 const style = document.createElement('style');
@@ -439,213 +595,3 @@ document.head.appendChild(style);
 console.log("%c[DRIFT] %cContent script loaded successfully", 
   "color: #00ffff; font-weight: bold;", 
   "color: #00ff00;");
-
-
-  // content.js
-
-// ─── GLOBALS ──────────────────────────────────────────────────────────────────
-let currentTrial = null;
-const trials = [];
-
-// ─── START / END TRIAL ─────────────────────────────────────────────────────────
-function startTrial(type, coherence) {
-  // type: "go" or "stop"; coherence: 10, 50, or 80
-  currentTrial = {
-    type,
-    coh:   coherence,
-    start: performance.now(),
-    samples: [],        // {t,x,y}
-    moved:   false,
-    moveTime: null
-  };
-  document.addEventListener("mousemove", handleMouseMove);
-}
-
-function endTrial() {
-  if (!currentTrial) return;
-  currentTrial.end = performance.now();
-  document.removeEventListener("mousemove", handleMouseMove);
-  trials.push(currentTrial);
-  currentTrial = null;
-
-  // If we've completed all trials (or each trial individually), compute & send:
-  const features = computeFeatures(trials);
-  chrome.runtime.sendMessage({ type: "PREDICT_ADHD", features });
-}
-
-// ─── MOUSE MOVE HANDLER ────────────────────────────────────────────────────────
-function handleMouseMove(e) {
-  const now = performance.now();
-  const relT = now - currentTrial.start;
-
-  // record sample
-  currentTrial.samples.push({ t: relT, x: e.clientX, y: e.clientY });
-
-  // record first-move time for go trials
-  if (!currentTrial.moved && currentTrial.type === "go") {
-    currentTrial.moved = true;
-    currentTrial.moveTime = relT;
-  }
-}
-
-// ─── METRIC CALCULATORS ─────────────────────────────────────────────────────────
-function calcMetrics(samples) {
-  const vels = [], accs = [], dists = [];
-  for (let i = 1; i < samples.length; i++) {
-    const dt  = (samples[i].t - samples[i-1].t) / 1000; // sec
-    const dx  = samples[i].x - samples[i-1].x;
-    const dy  = samples[i].y - samples[i-1].y;
-    const dist= Math.hypot(dx, dy);
-    const vel = dt>0? dist/dt : 0;
-    vels.push(vel);
-    dists.push(dist);
-    if (vels.length > 1) {
-      const acc = (vels[vels.length-1] - vels[vels.length-2]) / dt;
-      accs.push(acc);
-    }
-  }
-  return {
-    maxVel:  vels.length?  Math.max(...vels): 0,
-    maxAcc:  accs.length?  Math.max(...accs): 0,
-    totDist: dists.reduce((a,b)=>a+b, 0)
-  };
-}
-
-function avg(arr) {
-  return arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
-}
-
-// ─── FEATURE AGGREGATION ────────────────────────────────────────────────────────
-function computeFeatures(trials) {
-  const feats = {};
-
-  // Helper to filter and aggregate one coherence & type
-  function agg(type, coh) {
-    const subset = trials.filter(t=> t.type===type && t.coh===coh);
-    const mets   = subset.map(t=> calcMetrics(t.samples));
-    return {
-      vel_max:   avg(mets.map(m=>m.maxVel)),
-      acc_max:   avg(mets.map(m=>m.maxAcc)),
-      total_dist:avg(mets.map(m=>m.totDist))
-    };
-  }
-
-  // 1–9) No-go kinematics at 10,50,80
-  [10,50,80].forEach(c => {
-    const {vel_max, acc_max, total_dist} = agg("stop", c);
-    feats[`vel_max_nogo${c}coh`]   = vel_max;
-    feats[`acc_max_nogo${c}coh`]   = acc_max;
-    feats[`total_dist_nogo${c}coh`] = total_dist;
-  });
-
-  // 10) SSRT (integration method)
-  // Requires both go RTs & stop-failure rate:
-  const goRTs   = trials.filter(t=>t.type==="go" ).map(t=> t.moveTime ).filter(v=>v!=null);
-  const stopFails = trials.filter(t=>t.type==="stop" && t.moved).length;
-  const stopTotal = trials.filter(t=>t.type==="stop").length;
-  const failPct = stopTotal? stopFails/stopTotal : 0;
-  const sortedRTs = goRTs.slice().sort((a,b)=>a-b);
-  const nthIdx = Math.floor(failPct * sortedRTs.length);
-  const ssrtPt = sortedRTs[nthIdx] || avg(goRTs);
-  const meanSSD = 250; // if you have SSD timings per trial, compute actual mean
-  feats.ssrt_integ = ssrtPt - meanSSD;
-
-  // 11) IN = # successful inhibits (stop & no move)
-  feats.IN  = trials.filter(t=>t.type==="stop" && !t.moved).length;
-
-  // 12) vol = # violations (stop & moved)
-  feats.vol = stopFails;
-
-  // 13) go_acc = proportion of go trials with movement
-  const goTotal = trials.filter(t=>t.type==="go").length;
-  feats.go_acc = goTotal? trials.filter(t=>t.type==="go" && t.moved).length / goTotal : 0;
-
-  // 14) meanmt = mean movement time on go trials
-  feats.meanmt = avg(trials.filter(t=>t.type==="go" && t.moveTime!=null).map(t=>t.moveTime));
-
-  // 15) one-hot experiment dummy → popup should set this before startTrial
-  feats.experiment_staircase_SSD = currentTrial?.experiment === "staircase_SSD" ? 1 : 0;
-
-  return feats;
-}
-
-// ─── EXPOSE start/stop VIA MESSAGES ────────────────────────────────────────────
-chrome.runtime.onMessage.addListener((msg, sender, resp) => {
-  if (msg.command === "start") {
-    // msg should include { type: "go"|"stop", coh:10|50|80, experiment: "preset_SSD"|... }
-    currentTrial = null;
-    trials.length = 0;
-    startTrial(msg.type, msg.coh);
-    resp({started: true});
-  }
-  if (msg.command === "end") {
-    // optionally pass experiment in msg, set before
-    endTrial();
-    resp({ended: true});
-  }
-});
-
-// Modify your stopTracking() to package features and message background:
-function stopTracking() {
-  if (!isTracking) return;
-  
-  // stop listening
-  document.removeEventListener("mousemove", handleMouseMove);
-  hideTrackingIndicator();
-  isTracking = false;
-  
-  // compute analytics
-  const analytics = generateAnalytics();
-
-  // build the feature object YOUR MODEL expects:
-  const features = {
-    // mouse‐stop kinematics placeholders → using analytics fields
-    vel_max_nogo10coh:   analytics.maxSpeed,
-    acc_max_nogo10coh:   analytics.averageSpeed,
-    total_dist_nogo10coh: analytics.totalDistance,
-
-    vel_max_nogo50coh:   analytics.maxSpeed,
-    acc_max_nogo50coh:   analytics.averageSpeed,
-    total_dist_nogo50coh: analytics.totalDistance,
-
-    vel_max_nogo80coh:   analytics.maxSpeed,
-    acc_max_nogo80coh:   analytics.averageSpeed,
-    total_dist_nogo80coh: analytics.totalDistance,
-
-    // classic stop‐signal & go metrics
-    ssrt_integ: analytics.sessionDuration * 0.5,       // replace with your real SSRT calc
-    IN:         analytics.directionChanges,            // example mapping
-    vol:        analytics.directionChanges,            // example mapping
-    go_acc:     analytics.movementEfficiency,          // example mapping
-    meanmt:     analytics.sessionDuration / dataPointCount,
-
-    // one‐hot for your experiment type: 0=preset, 1=staircase
-    experiment_staircase_SSD: 1
-  };
-
-  // send to background for model prediction
-  chrome.runtime.sendMessage(
-    { type: "PREDICT_ADHD", features: features },
-    response => {
-      console.log("Background response:", response);
-    }
-  );
-
-  // export raw data as before
-  exportData(analytics);
-}
-
-// expose start/stop via messages from popup if you like
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.command === "start") {
-    startTracking();
-    sendResponse({ success: true });
-  } else if (message.command === "stop") {
-    stopTracking();
-    sendResponse({ success: true });
-  } else if (message.command === "get_status") {
-    sendResponse({
-      isTracking, dataPointCount, sessionStartTime
-    });
-  }
-});

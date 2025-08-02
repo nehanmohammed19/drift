@@ -399,3 +399,62 @@ button:disabled {
   border-left: none;
   border-top: none;
 }
+
+/* Prediction Display */
+.prediction-display {
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #ff00ff;
+  border-radius: 15px;
+  padding: 20px;
+  margin: 15px 0;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(255, 0, 255, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.prediction-header {
+  color: #ff00ff;
+  font-size: 14px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.prediction-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.prediction-value {
+  font-size: 32px;
+  font-weight: bold;
+  color: #00ffff;
+  text-shadow: 0 0 10px #00ffff;
+  margin-bottom: 5px;
+}
+
+.prediction-label {
+  font-size: 12px;
+  color: #ffffff;
+  opacity: 0.8;
+}
+
+/* High probability styling */
+.prediction-value.high {
+  color: #ff0066;
+  text-shadow: 0 0 10px #ff0066;
+}
+
+/* Medium probability styling */
+.prediction-value.medium {
+  color: #ffaa00;
+  text-shadow: 0 0 10px #ffaa00;
+}
+
+/* Low probability styling */
+.prediction-value.low {
+  color: #00ff00;
+  text-shadow: 0 0 10px #00ff00;
+}

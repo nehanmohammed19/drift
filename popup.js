@@ -136,6 +136,30 @@ function updateAnalyticsDisplay(analytics) {
   }
 }
 
+function updatePredictionDisplay(prediction) {
+  const predictionDisplay = document.getElementById('prediction-display');
+  const predictionValue = document.getElementById('prediction-value');
+  
+  if (prediction !== undefined && prediction !== null) {
+    const percentage = (prediction * 100).toFixed(1);
+    predictionValue.textContent = `${percentage}%`;
+    
+    // Apply color coding based on probability
+    predictionValue.classList.remove('low', 'medium', 'high');
+    if (prediction >= 0.7) {
+      predictionValue.classList.add('high');
+    } else if (prediction >= 0.4) {
+      predictionValue.classList.add('medium');
+    } else {
+      predictionValue.classList.add('low');
+    }
+    
+    predictionDisplay.style.display = 'block';
+  } else {
+    predictionDisplay.style.display = 'none';
+  }
+}
+
 function startAnalyticsPolling() {
   // Clear any existing interval
   if (analyticsInterval) {
@@ -201,6 +225,10 @@ function sendMessageToContentScript(command) {
                 if (response && response.analytics) {
                   updateAnalyticsDisplay(response.analytics);
                 }
+                // Check for prediction result
+                if (response && response.prediction !== undefined) {
+                  updatePredictionDisplay(response.prediction);
+                }
               } else if (command === "get_analytics") {
                 if (response && response.analytics) {
                   updateAnalyticsDisplay(response.analytics);
@@ -214,6 +242,13 @@ function sendMessageToContentScript(command) {
   });
 }
 
+// Listen for messages from background script (model predictions)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "PREDICTION_RESULT") {
+    updatePredictionDisplay(message.prediction);
+  }
+});
+
 // Initialize status and check for existing session
 updateStatus(false);
 checkExistingSession();
@@ -224,12 +259,4 @@ document.getElementById("start-btn").addEventListener("click", () => {
 
 document.getElementById("stop-btn").addEventListener("click", () => {
   sendMessageToContentScript("stop");
-});
-
-// Listen for messages from content script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "status_update") {
-    isTracking = message.tracking;
-    updateStatus(isTracking);
-  }
 });

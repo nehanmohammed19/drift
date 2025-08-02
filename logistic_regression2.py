@@ -11,7 +11,7 @@ from sklearn.linear_model      import LogisticRegression
 from sklearn.metrics           import roc_curve, roc_auc_score
 
 # 1) Load your oversampled dataset (with ADHD_label and all features)
-df = pd.read_excel('C:/Users/nehan/TerraHacks/exp_oversampled.xlsx')
+df = pd.read_excel('/Users/shai/Desktop/TerraHacks/TerraHacks/exp_oversampled.xlsx')
 
 print("Dataset shape:", df.shape)
 print("Class distribution:", df['ADHD_label'].value_counts())

@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "Drift",
   "version": "1.0",
-  "description": "Track cursor movement to infer attention behavior using jsPsych.",
+  "description": "Track cursor movement to infer attention behavior using machine learning.",
   "permissions": ["activeTab", "scripting", "storage", "downloads"],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1:8000/*", "http://localhost:8000/*"],
   "background": {
     "service_worker": "background.js"
   },
