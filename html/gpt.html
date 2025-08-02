@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>1D Fitts’s Law Pointing Test</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 18px;
+      background: rgba(255,255,255,0.8);
+      padding: 5px 10px;
+      border-radius: 4px;
+    }
+    .target {
+      position: absolute;
+      cursor: pointer;
+      border: 2px solid #333;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">Loading…</div>
+  <div id="target1" class="target"></div>
+  <div id="target2" class="target"></div>
+
+  <script>
+  (function() {
+    // Constants from the study
+    const D = 300;              // center-to-center distance (px)
+    const H = 150;              // target height (px)
+    const widths = [76, 37, 19]; // target widths for IDs 2.3, 3.2, 4.1
+    const IDs = widths.map(w => +Math.log2(D / w + 1).toFixed(1));
+
+    // Define sessions: a 5-trial warm-up, then three 20-trial sessions
+    const sessions = [
+      { width: widths[0], ID: IDs[0], required: 5,  practice: true  },
+      { width: widths[0], ID: IDs[0], required: 20, practice: false },
+      { width: widths[1], ID: IDs[1], required: 20, practice: false },
+      { width: widths[2], ID: IDs[2], required: 20, practice: false }
+    ];
+
+    let sessionIndex = 0;
+    let trialCount = 0;
+    let previousClickTime = null;
+    let samplingInterval = null;
+    let trajectory = [];
+    const trialData = [];
+
+    // DOM elements
+    const info = document.getElementById('info');
+    const t1   = document.getElementById('target1');
+    const t2   = document.getElementById('target2');
+
+    // State for swapping
+    let posA = { x:0, y:0 }, posB = { x:0, y:0 };
+    let colorA = '#3498db', colorB = '#e74c3c';
+
+    // Mouse position for sampling
+    let mouseX = 0, mouseY = 0;
+    window.addEventListener('mousemove', e => {
+      mouseX = e.clientX; mouseY = e.clientY;
+    });
+
+    function applyTargets() {
+      t1.style.left  = posA.x + 'px';
+      t1.style.top   = posA.y + 'px';
+      t1.style.width = sessions[sessionIndex].width + 'px';
+      t1.style.height= H + 'px';
+      t1.style.backgroundColor = colorA;
+
+      t2.style.left  = posB.x + 'px';
+      t2.style.top   = posB.y + 'px';
+      t2.style.width = sessions[sessionIndex].width + 'px';
+      t2.style.height= H + 'px';
+      t2.style.backgroundColor = colorB;
+    }
+
+    function swapTargets() {
+      [posA, posB] = [posB, posA];
+      [colorA, colorB] = [colorB, colorA];
+      applyTargets();
+    }
+
+    function startSampling() {
+      trajectory = [];
+      samplingInterval = setInterval(() => {
+        trajectory.push({ t: Date.now(), x: mouseX, y: mouseY });
+      }, 10);
+    }
+    function stopSampling() {
+      clearInterval(samplingInterval);
+      samplingInterval = null;
+    }
+
+    function updateInfo() {
+      const s = sessions[sessionIndex];
+      if (s.practice) {
+        info.textContent = `Practice (W=${s.width}px) — ${trialCount}/${s.required} movements`;
+      } else {
+        info.textContent = `Session ${sessionIndex} (ID=${s.ID}) — ${trialCount}/${s.required} movements`;
+      }
+    }
+
+    function handleValidClick() {
+      const now = Date.now();
+      const s = sessions[sessionIndex];
+
+      if (previousClickTime !== null) {
+        // record this movement
+        const MT = now - previousClickTime;
+        stopSampling();
+        trialData.push({
+          practice: s.practice,
+          session: sessionIndex,
+          width:    s.width,
+          ID:       s.ID,
+          movement: trialCount + 1,
+          MT:       MT,
+          trajectory: trajectory.slice()
+        });
+        trialCount++;
+      } else {
+        // first click in this session — start sampling
+        startSampling();
+      }
+
+      previousClickTime = now;
+      updateInfo();
+
+      if (trialCount >= s.required) {
+        // finished this session
+        stopSampling();
+        sessionIndex++;
+        if (sessionIndex < sessions.length) {
+          // small pause, then next session
+          setTimeout(initSession, 500);
+        } else {
+          endAll();
+        }
+      } else {
+        // swap for next movement
+        swapTargets();
+      }
+    }
+
+    function initSession() {
+      const s = sessions[sessionIndex];
+      trialCount = 0;
+      previousClickTime = null;
+      trajectory = [];
+      // compute target positions
+      const cw = window.innerWidth, ch = window.innerHeight;
+      const y0 = (ch - H) / 2;
+      const x0 = (cw - D) / 2;
+      posA = { x: x0,         y: y0 };
+      posB = { x: x0 + D - s.width, y: y0 };
+      colorA = '#3498db';
+      colorB = '#e74c3c';
+      applyTargets();
+      updateInfo();
+    }
+
+    function endAll() {
+      info.textContent = 'All done! Downloading data…';
+      // build CSV
+      let csv = 'practice,session,width,ID,movement,MT,trajectory\n';
+      trialData.forEach(d => {
+        csv += [
+          d.practice, d.session, d.width, d.ID, d.movement, d.MT,
+          `"${JSON.stringify(d.trajectory)}"`
+        ].join(',') + '\n';
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = 'fitts_data.csv';
+      a.click();
+      info.textContent = 'Data downloaded. Thank you!';
+    }
+
+    // Attach click handlers
+    t1.addEventListener('click', handleValidClick);
+    t2.addEventListener('click', handleValidClick);
+    // Re-init on resize
+    window.addEventListener('resize', initSession);
+
+    // start
+    initSession();
+  })();
+  </script>
+</body>
+</html>
