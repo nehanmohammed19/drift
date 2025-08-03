@@ -18,5 +18,11 @@
   "action": {
     "default_popup": "popup.html",
     "default_icon": "./icons/logo.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["simulation.html", "simulation.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
