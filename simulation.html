@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DRIFT - Simulation Interface</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Orbitron', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #00ffff;
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        /* Animated background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: gridMove 30s linear infinite;
+            z-index: 1;
+        }
+        
+        @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+        
+        .container {
+            position: relative;
+            z-index: 2;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .title {
+            font-size: 48px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            color: #0066ff;
+            text-shadow: 
+                0 0 20px #0066ff,
+                0 0 40px #0066ff,
+                0 0 60px #0066ff;
+            margin-bottom: 20px;
+            animation: glow 3s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { 
+                text-shadow: 0 0 20px #0066ff, 0 0 40px #0066ff, 0 0 60px #0066ff; 
+                transform: scale(1);
+            }
+            to { 
+                text-shadow: 0 0 30px #0066ff, 0 0 50px #0066ff, 0 0 70px #0066ff; 
+                transform: scale(1.02);
+            }
+        }
+        
+        .subtitle {
+            font-size: 18px;
+            color: #00ffff;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+        
+        .description {
+            font-size: 14px;
+            color: #ff00ff;
+            opacity: 0.6;
+            max-width: 600px;
+            text-align: center;
+            line-height: 1.6;
+        }
+        
+        .status-panel {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #0066ff;
+            border-radius: 20px;
+            padding: 30px;
+            margin-top: 40px;
+            box-shadow: 
+                0 0 30px rgba(0, 102, 255, 0.3),
+                inset 0 0 30px rgba(0, 102, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .status-text {
+            color: #00ffff;
+            font-size: 16px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Simulation Interface</h1>
+            <p class="subtitle">Neural Mouse Tracking Simulator</p>
+            <p class="description">
+                This simulation interface is ready for future enhancements. 
+                Advanced neural tracking algorithms and interactive simulations will be implemented here.
+            </p>
+        </div>
+        
+        <div class="status-panel">
+            <div class="status-text">Simulation Environment Ready</div>
+        </div>
+    </div>
+</body>
+</html> 

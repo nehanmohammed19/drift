@@ -260,3 +260,7 @@ document.getElementById("start-btn").addEventListener("click", () => {
 document.getElementById("stop-btn").addEventListener("click", () => {
   sendMessageToContentScript("stop");
 });
+
+document.getElementById("simulation-btn").addEventListener("click", () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL("simulation.html") });
+});
