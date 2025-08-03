@@ -27,8 +27,8 @@ function createTrackingIndicator() {
     position: fixed;
     top: 20px;
     right: 20px;
-    width: 120px;
-    height: 80px;
+    width: 100px;
+    height: 60px;
     background: rgba(0, 0, 0, 0.9);
     border: 2px solid #00ffff;
     border-radius: 10px;
@@ -47,9 +47,8 @@ function createTrackingIndicator() {
     backdrop-filter: blur(10px);
   `;
   indicator.innerHTML = `
-    <div style="font-weight: bold; margin-bottom: 5px;">DRIFT ACTIVE</div>
-    <div id="drift-count">0</div>
-    <div id="drift-efficiency">0%</div>
+    <div style="font-weight: bold; margin-bottom: 3px;">DRIFT ACTIVE</div>
+    <div id="drift-efficiency">0%</di
   `;
   document.body.appendChild(indicator);
   return indicator;
@@ -58,10 +57,8 @@ function createTrackingIndicator() {
 function updateTrackingIndicator() {
   const indicator = document.getElementById('drift-tracking-indicator');
   if (indicator) {
-    const countElement = indicator.querySelector('#drift-count');
     const efficiencyElement = indicator.querySelector('#drift-efficiency');
     
-    if (countElement) countElement.textContent = dataPointCount;
     if (efficiencyElement) {
       const efficiency = calculatePathEfficiency();
       efficiencyElement.textContent = `${efficiency.toFixed(1)}%`;
@@ -97,20 +94,52 @@ function calculateSpeed(distance, timeDiff) {
   return timeDiff > 0 ? (distance / timeDiff) * 1000 : 0;
 }
 
-// Calculate path efficiency (optimal path vs actual path)
+// Calculate path efficiency between consecutive points
 function calculatePathEfficiency() {
-  if (!startPosition || mouseData.length < 2) return 0;
+  if (mouseData.length < 3) return 100; // Need at least 3 points for meaningful calculation
   
-  const currentPosition = mouseData[mouseData.length - 1];
-  const optimalDistance = calculateDistance(
-    startPosition.x, startPosition.y,
-    currentPosition.x, currentPosition.y
-  );
+  let totalEfficiency = 0;
+  let segmentCount = 0;
   
-  if (optimalDistance === 0) return 100;
+  // Calculate efficiency for each segment (point to point)
+  for (let i = 1; i < mouseData.length - 1; i++) {
+    const prevPoint = mouseData[i - 1];
+    const currentPoint = mouseData[i];
+    const nextPoint = mouseData[i + 1];
+    
+    // Calculate optimal distance (straight line from prev to next)
+    const optimalDistance = calculateDistance(prevPoint.x, prevPoint.y, nextPoint.x, nextPoint.y);
+    
+    // Calculate actual distance (prev -> current -> next)
+    const actualDistance = calculateDistance(prevPoint.x, prevPoint.y, currentPoint.x, currentPoint.y) +
+                          calculateDistance(currentPoint.x, currentPoint.y, nextPoint.x, nextPoint.y);
+    
+    // Calculate direction change
+    const angle1 = Math.atan2(currentPoint.y - prevPoint.y, currentPoint.x - prevPoint.x);
+    const angle2 = Math.atan2(nextPoint.y - currentPoint.y, nextPoint.x - currentPoint.x);
+    const directionChange = Math.abs(angle2 - angle1) * (180 / Math.PI); // Convert to degrees
+    
+    // Calculate segment efficiency
+    let segmentEfficiency = 100;
+    
+    if (optimalDistance > 0) {
+      // Distance efficiency (how close actual path is to optimal)
+      const distanceEfficiency = (optimalDistance / actualDistance) * 100;
+      
+      // Direction efficiency (penalty for direction changes)
+      // 0° change = 100%, 90° change = 70%, 180° change = 40%
+      const directionEfficiency = Math.max(40, 100 - (directionChange * 0.67));
+      
+      // Combine both factors (weighted average: 70% distance, 30% direction)
+      segmentEfficiency = (distanceEfficiency * 0.7) + (directionEfficiency * 0.3);
+    }
+    
+    totalEfficiency += segmentEfficiency;
+    segmentCount++;
+  }
   
-  const efficiency = (optimalDistance / totalDistance) * 100;
-  return Math.min(efficiency, 100); // Cap at 100%
+  // Return average efficiency across all segments
+  return segmentCount > 0 ? totalEfficiency / segmentCount : 100;
 }
 
 // Generate comprehensive analytics
@@ -146,9 +175,20 @@ function generateAnalytics() {
     previousDirection = currentDirection;
   }
   
-  // Calculate average speed
-  const avgSpeed = speedSamples.length > 0 ? 
-    speedSamples.reduce((a, b) => a + b, 0) / speedSamples.length : 0;
+  // Calculate average speed - only during active movement with minimum threshold
+  let avgSpeed = 0;
+  if (speedSamples.length > 0) {
+    // Filter speeds to only include meaningful movements
+    // Minimum speed threshold: 10 px/s (very slow but intentional movement)
+    // Maximum speed threshold: 5000 px/s (very fast but realistic)
+    const meaningfulSpeeds = speedSamples.filter(speed => 
+      speed >= 10 && speed <= 5000 && !isNaN(speed) && isFinite(speed)
+    );
+    
+    if (meaningfulSpeeds.length > 0) {
+      avgSpeed = meaningfulSpeeds.reduce((a, b) => a + b, 0) / meaningfulSpeeds.length;
+    }
+  }
   
   // Calculate path efficiency
   const pathEfficiency = calculatePathEfficiency();
@@ -294,15 +334,20 @@ function handleMouseMove(event) {
     
     if (distance < MIN_DISTANCE_THRESHOLD) return;
     
-    // Calculate speed
+    // Calculate speed with better accuracy
     const timeDiff = (currentTime - lastPosition.time) / 1000;
-    const speed = calculateSpeed(distance, timeDiff);
-    
-    if (speed > maxSpeed) maxSpeed = speed;
-    speedSamples.push(speed);
-    
-    // Keep only recent speed samples for average calculation
-    if (speedSamples.length > 50) speedSamples.shift();
+    if (timeDiff > 0) {
+      const speed = distance / timeDiff; // pixels per second
+      
+      // Only record meaningful speeds
+      if (speed >= 10 && speed <= 5000 && !isNaN(speed) && isFinite(speed)) {
+        if (speed > maxSpeed) maxSpeed = speed;
+        speedSamples.push(speed);
+        
+        // Keep only recent speed samples for average calculation
+        if (speedSamples.length > 50) speedSamples.shift();
+      }
+    }
     
     totalDistance += distance;
   }
@@ -531,15 +576,15 @@ function buildModelFeatures(analytics) {
   return {
     // Mouse movement features mapped to model expectations
     vel_max_nogo10coh: analytics.maxSpeed,
-    acc_max_nogo10coh: analytics.averageSpeed,
+    acc_max_nogo10coh: analytics.averageSpeed || 0, // Use 0 if averageSpeed doesn't exist
     total_dist_nogo10coh: analytics.totalDistance,
     
     vel_max_nogo50coh: analytics.maxSpeed * 0.8, // Slightly different for different coherences
-    acc_max_nogo50coh: analytics.averageSpeed * 0.8,
+    acc_max_nogo50coh: (analytics.averageSpeed || 0) * 0.8,
     total_dist_nogo50coh: analytics.totalDistance * 0.8,
     
     vel_max_nogo80coh: analytics.maxSpeed * 0.6,
-    acc_max_nogo80coh: analytics.averageSpeed * 0.6,
+    acc_max_nogo80coh: (analytics.averageSpeed || 0) * 0.6,
     total_dist_nogo80coh: analytics.totalDistance * 0.6,
     
     // Stop-signal and go metrics
