@@ -10,12 +10,10 @@ chrome.downloads.onChanged.addListener((downloadDelta) => {
   }
 });
 
-// Listen for messages from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'download_files') {
     const { jsonData, csvData, timestamp } = message;
     
-    // Download JSON file
     const jsonBlob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
     const jsonUrl = URL.createObjectURL(jsonBlob);
     
