@@ -6,7 +6,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+<<<<<<< HEAD
 MODEL_DIR = ROOT / "models"
+=======
+>>>>>>> main
 
 
 def check_dependencies() -> bool:
@@ -31,7 +34,11 @@ def check_dependencies() -> bool:
 
 def check_model_files() -> bool:
     """Check if model files exist."""
+<<<<<<< HEAD
     model_file = MODEL_DIR / "logreg_pipeline.pkl"
+=======
+    model_file = ROOT / "logreg_pipeline.pkl"
+>>>>>>> main
     if not model_file.exists():
         print("❌ Model file 'logreg_pipeline.pkl' not found!")
         print("Make sure you have trained your model and saved it as 'logreg_pipeline.pkl'")
@@ -57,7 +64,11 @@ def start_server() -> None:
                 sys.executable,
                 "-m",
                 "uvicorn",
+<<<<<<< HEAD
                 "server.app:app",
+=======
+                "serve_model:app",
+>>>>>>> main
                 "--host",
                 "127.0.0.1",
                 "--port",

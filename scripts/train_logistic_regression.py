@@ -12,14 +12,22 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parent.parent
+<<<<<<< HEAD
 DATA_DIR = ROOT / "data"
 MODEL_DIR = ROOT / "models"
+=======
+>>>>>>> main
 
 
 def load_data() -> pd.DataFrame:
     """Load experiment data and create ADHD labels."""
+<<<<<<< HEAD
     exp1 = pd.read_csv(DATA_DIR / "exp1_mouse.csv")
     exp2 = pd.read_csv(DATA_DIR / "exp2_mouse.csv")
+=======
+    exp1 = pd.read_csv(ROOT / "exp1_mouse.csv")
+    exp2 = pd.read_csv(ROOT / "exp2_mouse.csv")
+>>>>>>> main
     exp1["experiment"] = "preset_SSD"
     exp2["experiment"] = "staircase_SSD"
     df = pd.concat([exp1, exp2], ignore_index=True)
@@ -89,8 +97,12 @@ def train_model(X: pd.DataFrame, y: pd.Series) -> GridSearchCV:
 
 
 def save_model(model) -> None:
+<<<<<<< HEAD
     MODEL_DIR.mkdir(exist_ok=True)
     joblib.dump(model, MODEL_DIR / "logreg_pipeline.pkl")
+=======
+    joblib.dump(model, ROOT / "logreg_pipeline.pkl")
+>>>>>>> main
 
 
 def plot_roc(model, X, y) -> None:
